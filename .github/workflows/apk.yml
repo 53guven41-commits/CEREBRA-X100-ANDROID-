@@ -1,3 +1,4 @@
+
 name: CEREBRA X100 APK
 on: [push, workflow_dispatch]
 permissions:
@@ -11,8 +12,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      
-  
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -34,8 +33,8 @@ jobs:
               applicationId 'com.cerebra.x100'
               minSdk 26
               targetSdk 34
-              versionCode 1
-              versionName '0.1'
+              versionCode 2
+              versionName '0.2'
             }
           }
           EOF
@@ -65,22 +64,24 @@ jobs:
           import android.net.wifi.*;
           import android.bluetooth.*;
           import android.hardware.usb.*;
+          import android.content.*;
+          import java.util.*;
 
           public class MainActivity extends Activity {
             TextView result;
-            public void onCreate(Bundle b) {
+            public void onCreate(Bundle b){
               super.onCreate(b);
               LinearLayout l=new LinearLayout(this);
               l.setOrientation(1);
-              l.setPadding(25,40,25,25);
+              l.setPadding(25,30,25,25);
               l.setBackgroundColor(0xff081522);
               TextView title=new TextView(this);
-              title.setText("CEREBRA AI\nCYBER GUARDIAN X100");
-              title.setTextSize(25);
+              title.setText("CEREBRA AI\nCYBER GUARDIAN X100\nV0.2 SMART ENGINE");
+              title.setTextSize(24);
               title.setTextColor(0xff00ccff);
               l.addView(title);
-              String[] names={"WI-FI ANALİZİ","BLUETOOTH","USB / OTG"};
-              for(int i=0;i<3;i++){
+              String[] names={"WI-FI ANALİZİ","BLUETOOTH","USB / OTG","AKILLI ANALİZ","REFERANS KAYDET"};
+              for(int i=0;i<names.length;i++){
                 final int n=i;
                 Button k=new Button(this);
                 k.setText(names[i]);
@@ -89,26 +90,38 @@ jobs:
               }
               result=new TextView(this);
               result.setTextColor(0xff66ffbb);
-              result.setTextSize(17);
-              result.setText("Sistem hazır.");
+              result.setTextSize(16);
+              result.setText("SMART ENGINE HAZIR");
               ScrollView s=new ScrollView(this);
               s.addView(result);
               l.addView(s);
               setContentView(l);
             }
+
+            boolean wifiPermission(){
+              if(checkSelfPermission("android.permission.ACCESS_FINE_LOCATION")!=0){
+                requestPermissions(new String[]{"android.permission.ACCESS_FINE_LOCATION","android.permission.ACCESS_COARSE_LOCATION"},1);
+                result.setText("İzin verip yeniden deneyin.");
+                return false;
+              }
+              return true;
+            }
+
             void scan(int n){
               result.setText("");
-              try {
-                if(n==0){
+              try{
+                if(n==0 || n>=3){
                   WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);
-                  result.setText("Wi-Fi: "+(w.isWifiEnabled()?"Açık":"Kapalı"));
-                  if(checkSelfPermission("android.permission.ACCESS_FINE_LOCATION")!=0){
-                    requestPermissions(new String[]{"android.permission.ACCESS_FINE_LOCATION","android.permission.ACCESS_COARSE_LOCATION"},1);
-                    result.append("\nİzin verip yeniden deneyin.");
+                  if(w==null || !w.isWifiEnabled()){
+                    result.setText("Wi-Fi kapalı.");
                     return;
                   }
-                  for(android.net.wifi.ScanResult r:w.getScanResults())
-                    result.append("\n"+r.SSID+" | "+r.level+" dBm");
+                  if(!wifiPermission())return;
+                  List<ScanResult> list=w.getScanResults();
+                  if(n>=3){smart(list,n==4);return;}
+                  result.setText("WI-FI ANALİZİ\n");
+                  for(ScanResult r:list)
+                    result.append("\n"+r.SSID+" | "+r.level+" dBm | "+r.frequency+" MHz\n"+r.capabilities+"\n");
                 }
                 if(n==1){
                   if(Build.VERSION.SDK_INT>=31 && checkSelfPermission("android.permission.BLUETOOTH_CONNECT")!=0){
@@ -117,7 +130,7 @@ jobs:
                     return;
                   }
                   BluetoothAdapter a=BluetoothAdapter.getDefaultAdapter();
-                  if(a==null){result.setText("Bluetooth bulunamadı");return;}
+                  if(a==null){result.setText("Bluetooth bulunamadı.");return;}
                   result.setText("Bluetooth: "+(a.isEnabled()?"Açık":"Kapalı"));
                   for(BluetoothDevice d:a.getBondedDevices())
                     result.append("\n"+d.getName());
@@ -128,12 +141,61 @@ jobs:
                   for(UsbDevice d:u.getDeviceList().values())
                     result.append("\nVID: "+d.getVendorId()+" PID: "+d.getProductId());
                 }
-              }catch(Exception e){result.setText("Kontrol hatası: "+e.getMessage());}
+              }catch(Exception e){
+                result.setText("Kontrol hatası: "+e.getMessage());
+              }
+            }
+
+            void smart(List<ScanResult> list,boolean save){
+              if(list.isEmpty()){
+                result.setText("Wi-Fi sonucu bulunamadı.");
+                return;
+              }
+              SharedPreferences p=getSharedPreferences("reference",MODE_PRIVATE);
+              Set<String> old=p.getStringSet("aps",Collections.emptySet());
+              Set<String> now=new HashSet<>();
+              int open=0,weak=0,strong=0,wep=0,fresh=0;
+              for(ScanResult r:list){
+                String c=r.capabilities==null?"":r.capabilities;
+                if(c.equals("[ESS]"))open++;
+                if(c.contains("WEP"))wep++;
+                if(r.level>=-70)strong++;
+                if(r.level<=-80)weak++;
+                if(r.BSSID!=null && now.add(r.BSSID) && !old.contains(r.BSSID))fresh++;
+              }
+              if(save){
+                p.edit().putStringSet("aps",now).apply();
+                result.setText("Yerel referans kaydedildi: "+now.size()+" erişim noktası.");
+                return;
+              }
+              result.setText("SMART ENGINE V0.2\n\n");
+              result.append("Son taramadaki erişim noktası: "+list.size());
+              result.append("\nGüçlü sinyal: "+strong);
+              result.append("\nZayıf sinyal: "+weak);
+              result.append("\nAçık ağ göstergesi: "+open);
+              result.append("\nWEP güvenlik uyarısı: "+wep);
+              if(p.contains("aps"))
+                result.append("\nYeni erişim noktası: "+fresh);
+              else
+                result.append("\nÖnce referans kaydedin.");
+              if(Build.VERSION.SDK_INT<31 || checkSelfPermission("android.permission.BLUETOOTH_CONNECT")==0){
+                BluetoothAdapter a=BluetoothAdapter.getDefaultAdapter();
+                if(a!=null)
+                  result.append("\nEşleşmiş Bluetooth: "+a.getBondedDevices().size());
+              }
+              UsbManager u=(UsbManager)getSystemService(USB_SERVICE);
+              if(u!=null)
+                result.append("\nUSB cihaz: "+u.getDeviceList().size());
+              result.append("\n\nGÜVENLİK ÖNERİLERİ");
+              result.append("\nKendi ağınızda WPA2 veya WPA3 kullanın.");
+              result.append("\nBilinmeyen USB cihazlarına dikkat edin.");
+              result.append("\nYeni ağ tek başına tehdit değildir.");
+              result.append("\n\nYerel kural tabanlı analiz.");
             }
           }
           EOF
       - run: gradle :app:assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: CEREBRA-X100-APK
+          name: CEREBRA-X100-V02-APK
           path: app/build/outputs/apk/debug/app-debug.apk
