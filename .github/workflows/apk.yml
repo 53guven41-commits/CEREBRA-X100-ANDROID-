@@ -1,1 +1,139 @@
+name: CEREBRA X100 APK
+on: [push, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Create Android project
+        run: |
+          mkdir -p app/src/main/java/com/cerebra/x100
+          cat > settings.gradle <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = 'CerebraX100'
+          include ':app'
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins { id 'com.android.application' version '8.7.3' }
+          android {
+            namespace 'com.cerebra.x100'
+            compileSdk 35
+            defaultConfig {
+              applicationId 'com.cerebra.x100'
+              minSdk 26
+              targetSdk 34
+              versionCode 1
+              versionName '0.1'
+            }
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+          <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+          <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+          <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+          <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+          <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+          <uses-feature android:name="android.hardware.usb.host" android:required="false"/>
+          <application android:label="CEREBRA X100" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
+          <activity android:name=".MainActivity" android:exported="true">
+          <intent-filter>
+          <action android:name="android.intent.action.MAIN"/>
+          <category android:name="android.intent.category.LAUNCHER"/>
+          </intent-filter>
+          </activity>
+          </application>
+          </manifest>
+          EOF
+          cat > app/src/main/java/com/cerebra/x100/MainActivity.java <<'EOF'
+          package com.cerebra.x100;
+          import android.app.*;
+          import android.os.*;
+          import android.widget.*;
+          import android.net.wifi.*;
+          import android.bluetooth.*;
+          import android.hardware.usb.*;
 
+          public class MainActivity extends Activity {
+            TextView result;
+            public void onCreate(Bundle b) {
+              super.onCreate(b);
+              LinearLayout l=new LinearLayout(this);
+              l.setOrientation(1);
+              l.setPadding(25,40,25,25);
+              l.setBackgroundColor(0xff081522);
+              TextView title=new TextView(this);
+              title.setText("CEREBRA AI\nCYBER GUARDIAN X100");
+              title.setTextSize(25);
+              title.setTextColor(0xff00ccff);
+              l.addView(title);
+              String[] names={"WI-FI ANALİZİ","BLUETOOTH","USB / OTG"};
+              for(int i=0;i<3;i++){
+                final int n=i;
+                Button k=new Button(this);
+                k.setText(names[i]);
+                l.addView(k);
+                k.setOnClickListener(v->scan(n));
+              }
+              result=new TextView(this);
+              result.setTextColor(0xff66ffbb);
+              result.setTextSize(17);
+              result.setText("Sistem hazır.");
+              ScrollView s=new ScrollView(this);
+              s.addView(result);
+              l.addView(s);
+              setContentView(l);
+            }
+            void scan(int n){
+              result.setText("");
+              try {
+                if(n==0){
+                  WifiManager w=(WifiManager)getApplicationContext().getSystemService(WIFI_SERVICE);
+                  result.setText("Wi-Fi: "+(w.isWifiEnabled()?"Açık":"Kapalı"));
+                  if(checkSelfPermission("android.permission.ACCESS_FINE_LOCATION")!=0){
+                    requestPermissions(new String[]{"android.permission.ACCESS_FINE_LOCATION","android.permission.ACCESS_COARSE_LOCATION"},1);
+                    result.append("\nİzin verip yeniden deneyin.");
+                    return;
+                  }
+                  for(android.net.wifi.ScanResult r:w.getScanResults())
+                    result.append("\n"+r.SSID+" | "+r.level+" dBm");
+                }
+                if(n==1){
+                  if(Build.VERSION.SDK_INT>=31 && checkSelfPermission("android.permission.BLUETOOTH_CONNECT")!=0){
+                    requestPermissions(new String[]{"android.permission.BLUETOOTH_CONNECT"},2);
+                    result.setText("İzin verip yeniden deneyin.");
+                    return;
+                  }
+                  BluetoothAdapter a=BluetoothAdapter.getDefaultAdapter();
+                  if(a==null){result.setText("Bluetooth bulunamadı");return;}
+                  result.setText("Bluetooth: "+(a.isEnabled()?"Açık":"Kapalı"));
+                  for(BluetoothDevice d:a.getBondedDevices())
+                    result.append("\n"+d.getName());
+                }
+                if(n==2){
+                  UsbManager u=(UsbManager)getSystemService(USB_SERVICE);
+                  result.setText("USB cihaz sayısı: "+u.getDeviceList().size());
+                  for(UsbDevice d:u.getDeviceList().values())
+                    result.append("\nVID: "+d.getVendorId()+" PID: "+d.getProductId());
+                }
+              }catch(Exception e){result.setText("Kontrol hatası: "+e.getMessage());}
+            }
+          }
+          EOF
+      - run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CEREBRA-X100-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
